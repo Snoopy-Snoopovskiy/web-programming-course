@@ -7,8 +7,6 @@ import { verify } from "hono/jwt"
 const auth = new Hono()
 const prisma = new PrismaClient()
 
-const JWT_SECRET = process.env.JWT_SECRET!
-
 auth.post("/github/callback", async (c) => {
   try {
     const body = await c.req.json()
