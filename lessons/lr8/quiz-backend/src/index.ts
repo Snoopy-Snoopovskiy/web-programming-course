@@ -3,6 +3,7 @@ import { Hono } from 'hono'
 import auth from "./routes/auth.js"
 import "dotenv/config"
 
+// Создаем серверное приложение
 const app = new Hono()
 
 app.get('/', (c) => {
@@ -23,6 +24,6 @@ serve({
 
 app.route("/api/auth", auth)
 
-app.get("/health", (c) => c.json({ status: "ok" }))
+// app.get("/health", (c) => c.json({ status: "ok" }))
 
 export default app

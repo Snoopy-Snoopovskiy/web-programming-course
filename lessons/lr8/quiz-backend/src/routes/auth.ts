@@ -13,18 +13,13 @@ auth.post("/github/callback", async (c) => {
   try {
     const body = await c.req.json()
 
-    //Валидация
     const result = githubCodeSchema.safeParse(body)
-
     if (!result.success) {
       return c.json({ error: "Invalid code" }, 400)
     }
-
     const { code } = result.data
-
     let githubUser
 
-    //Mock режим
     if (code.startsWith("test_")) {
       githubUser = {
         id: 12345,
@@ -32,11 +27,9 @@ auth.post("/github/callback", async (c) => {
         name: "Test User"
       }
     } else {
-      // Реальный режим (пока можно оставить заглушку)
       return c.json({ error: "Real GitHub OAuth not implemented yet" }, 501)
     }
 
-    // Создать или обновить пользователя
     const user = await prisma.user.upsert({
       where: { githubId: githubUser.id },
       update: {
@@ -50,7 +43,6 @@ auth.post("/github/callback", async (c) => {
       }
     })
 
-    // Создать JWT
     const token = await sign(
       {
         userId: user.id,
@@ -60,7 +52,6 @@ auth.post("/github/callback", async (c) => {
       "HS256"
     )
 
-    // Вернуть ответ
     return c.json({
       token,
       user
@@ -72,16 +63,13 @@ auth.post("/github/callback", async (c) => {
 })
 
 export default auth
-
 async function verifyToken(c: any) {
   const authHeader = c.req.header("Authorization")
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return null
   }
-
   const token = authHeader.split(" ")[1]
-
   try {
     const payload = await verify(
       token,
@@ -99,7 +87,6 @@ interface JWTPayload {
   userId: string
   email: string
 }
-
 
 auth.get("/me", async (c) => {
   const payload = await verifyToken(c)
@@ -119,43 +106,45 @@ auth.get("/me", async (c) => {
   return c.json({ user })
 })
 
-auth.get("/me", async (c) => {
-  const authHeader = c.req.header("Authorization")
+// // Возвращаем текущего пользователя
+// auth.get("/me", async (c) => {
+//   const authHeader = c.req.header("Authorization")
 
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return c.json({ error: "Unauthorized" }, 401)
-  }
+//   if (!authHeader || !authHeader.startsWith("Bearer ")) {
+//     return c.json({ error: "Unauthorized" }, 401)
+//   }
 
-  const token = authHeader.split(" ")[1]
+//   const token = authHeader.split(" ")[1]
 
-  try {
-    const payload = await verify(
-      token,
-      process.env.JWT_SECRET!,
-      "HS256"
-    )
+//   try {
+//     const payload = await verify(
+//       token,
+//       process.env.JWT_SECRET!,
+//       "HS256"
+//     )
 
-    const userId = (payload as any).userId as string
+//     // Получае ID пользователя из токена
+//     const userId = (payload as any).userId as string
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId }
-    })
+//     const user = await prisma.user.findUnique({
+//       where: { id: userId }
+//     })
 
-    if (!user) {
-      return c.json({ error: "User not found" }, 404)
-    }
+//     if (!user) {
+//       return c.json({ error: "User not found" }, 404)
+//     }
 
-    return c.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        githubId: user.githubId,
-        createdAt: user.createdAt
-      }
-    })
+//     return c.json({
+//       user: {
+//         id: user.id,
+//         email: user.email,
+//         name: user.name,
+//         githubId: user.githubId,
+//         createdAt: user.createdAt
+//       }
+//     })
 
-  } catch (error) {
-    return c.json({ error: "Invalid token" }, 401)
-  }
-})
+//   } catch (error) {
+//     return c.json({ error: "Invalid token" }, 401)
+//   }
+// })
