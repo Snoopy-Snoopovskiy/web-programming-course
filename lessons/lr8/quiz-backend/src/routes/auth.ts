@@ -17,6 +17,7 @@ interface GitHubUser {
   email: string | null
 }
 
+<<<<<<< HEAD
 function getMockGitHubUser(code: string): GitHubUser {
   const suffix = code.replace(/^test_/, '') || 'user'
   const githubId =
@@ -29,6 +30,45 @@ function getMockGitHubUser(code: string): GitHubUser {
     login: `mock_${suffix}`,
     name: `Mock User (${suffix})`,
     email: `mock_${suffix}@example.com`,
+=======
+    const result = githubCodeSchema.safeParse(body)
+    if (!result.success) {
+      return c.json({ error: "Invalid code" }, 400)
+    }
+    const { code } = result.data
+
+    const githubUser = await getGitHubUserByCode(code)
+
+    const user = await prisma.user.upsert({
+      where: { githubId: githubUser.id.toString() },
+      update: {
+        email: githubUser.email ?? "no-email@github.com",
+        name: githubUser.name
+      },
+      create: {
+        githubId: githubUser.id.toString() ,
+        email: githubUser.email  ?? "no-email@github.com",
+        name: githubUser.name
+      }
+    })
+
+    const token = await sign(
+      {
+        userId: user.id,
+        email: user.email
+      },
+      JWT_SECRET,
+      "HS256"
+    )
+
+    return c.json({
+      token,
+      user
+    })
+
+  } catch (error) {
+    return c.json({ error: "Server error" }, 500)
+>>>>>>> labWork8
   }
 }
 
