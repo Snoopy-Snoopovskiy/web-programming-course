@@ -23,13 +23,13 @@ auth.post("/github/callback", async (c) => {
     const githubUser = await getGitHubUserByCode(code)
 
     const user = await prisma.user.upsert({
-      where: { githubId: githubUser.id },
+      where: { githubId: githubUser.id.toString() },
       update: {
         email: githubUser.email ?? "no-email@github.com",
         name: githubUser.name
       },
       create: {
-        githubId: githubUser.id,
+        githubId: githubUser.id.toString() ,
         email: githubUser.email  ?? "no-email@github.com",
         name: githubUser.name
       }
