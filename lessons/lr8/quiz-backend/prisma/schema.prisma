@@ -1,17 +1,79 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
 generator client {
-  provider = "prisma-client-js"
-    output   = "../src/generated/prisma"
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
+  id        String    @id @default(cuid())
+  email     String?   @unique
   name      String?
-  githubId  Int      @unique
-  createdAt DateTime @default(now())
+  githubId  String    @unique
+  role      String    @default("student") // "student" | "admin"
+  sessions  Session[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Category {
+  id        String     @id @default(cuid())
+  name      String
+  slug      String     @unique
+  questions Question[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Question {
+  id            String   @id @default(cuid())
+  text          String
+  type          String // "single-select" | "multiple-select" | "essay"
+  categoryId    String
+  category      Category @relation(fields: [categoryId], references: [id])
+  correctAnswer Json? // правильные ответы для автопроверки
+  points        Int      @default(1)
+  answers       Answer[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Session {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  status      String    @default("in_progress") // "in_progress" | "completed" | "expired"
+  score       Float?
+  startedAt   DateTime  @default(now())
+  expiresAt   DateTime
+  completedAt DateTime?
+  answers     Answer[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([userId, status])
+}
+
+model Answer {
+  id         String   @id @default(cuid())
+  sessionId  String
+  session    Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id])
+  userAnswer Json
+  score      Float? // null если ещё не проверен (essay)
+  isCorrect  Boolean? // для автопроверки
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([sessionId, questionId])
+  @@index([sessionId])
+  @@index([questionId])
 }
