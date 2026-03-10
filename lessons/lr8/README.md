@@ -1,545 +1,296 @@
-# LR9: Database & Business Logic - Scoring Algorithm
+# LR8: Backend API with Hono + TypeScript
 
 ## Структура занятия
 
-- **Лекция (90 минут):** Теория Advanced Backend разработки
+- **Лекция:** Теория Backend разработки
   - Материалы: [slides.html](docs/slides-standalone/slides.html) | [slides-speech.md](docs/slides-speech.md)
   - Справочные материалы: [GUIDE.md](docs/GUIDE.md) | [CHEATSHEET.md](docs/CHEATSHEET.md) | [Interactive Examples](docs/interactive.html)
 
-- **Практическая работа (следующая неделя, 180 минут):** Реализация бизнес-логики
+- **Практическая работа:** Реализация backend
 
 ---
 
-## 🎯 Практическая работа: Добавляем Business Logic
+## 🎯 Практическая работа: Создание Backend
 
 ### Цели
 
 По окончании практической работы вы:
 
-1. **Реализуете Scoring Algorithm** для разных типов вопросов
-2. **Добавите бизнес-логику в endpoints** (Session, Answer)
-3. **Обновите Prisma schema** с relationships и индексами
-4. **Реализуете admin endpoints** для управления и оценивания
-5. **Добавите валидацию** на сервере для всех inputs
-6. **Оптимизируете database queries** для performance
+1. **Настроите базу данных** с помощью Prisma ORM
+2. **Создадите User модель** для хранения данных студентов с GitHub ID
+3. **Реализуете GitHub OAuth** (POST /api/auth/github/callback)
+4. **Реализуете JWT авторизацию** (выдача токенов, GET /api/auth/me)
+5. **Защитите endpoints** JWT токенами
 
 ### Результат
 
-Backend приложение которое:
+Backend приложение на `localhost:3000`, которое:
 
-- ✅ Правильно считает баллы (multiple-select, essay)
-- ✅ Управляет жизненным циклом сессии (start, submit, expire)
-- ✅ Имеет admin функциональность (manage, grade, report)
-- ✅ Валидирует все данные на сервере
-- ✅ Быстро работает с большими наборами данных
-- ✅ Использует transactions для безопасности
+- Имеет User модель в БД с полями: id, email, name, githubId
+- Обменивает GitHub код на JWT токен (POST /api/auth/github/callback)
+- Выдаёт JWT токены после верификации GitHub OAuth
+- Имеет защищённый endpoint GET /api/auth/me для получения текущего пользователя
+- Поддерживает mock режим для тестирования (code с префиксом `test_*`)
 
 ---
 
 ## 🛠️ Инструменты и технологии
 
-Те же что в LR8 плюс дополнительные концепции:
+| Технология         | Назначение                               | Версия              |
+| ------------------ | ---------------------------------------- | ------------------- |
+| **Node.js**        | Runtime для JavaScript на сервере        | 18+                 |
+| **TypeScript**     | Типизированный JavaScript                | 5.0+                |
+| **Hono**           | Web framework (легче Express, type-safe) | 3.0+                |
+| **Prisma**         | ORM для работы с БД, миграции, типы      | 5.0+                |
+| **SQLite**         | Встроенная база данных                   | 3.0+                |
+| **Zod**            | Runtime validation схем                  | 3.0+                |
+| **JWT**            | Токены для аутентификации                | встроено в hono/jwt |
+| **Postman / curl** | Тестирование API                         | для debug           |
 
-| Технология           | Назначение                                          |
-| -------------------- | --------------------------------------------------- |
-| **Prisma**           | ORM с relationships, transactions, batch operations |
-| **Zod**              | Runtime validation для inputs                       |
-| **Transactions**     | Atomic операции для consistency                     |
-| **Database Indexes** | Для оптимизации queries                             |
-| **Pagination**       | Для работы с большими наборами                      |
+**Стек:** Node.js + TypeScript + Hono + Prisma + SQLite + JWT
 
 ---
 
-## 📦 Структура работы
+## 📦 Установка и подготовка
 
-Вы работаете с backend из LR8 и добавляете функциональность:
+### Стартовые команды
+
+**1. Используйте Hono стартер (рекомендуется):**
+
+```bash
+npm create hono@latest quiz-backend -- --template nodejs
+cd quiz-backend
+npm install
+```
+
+**2. Установите дополнительные пакеты:**
+
+**3. Настройте .env файл:**
+
+```env
+# .env
+DATABASE_URL="file:./dev.db"
+JWT_SECRET="your-secret-key-change-in-production"
+GITHUB_CLIENT_ID="your-github-client-id"
+GITHUB_CLIENT_SECRET="your-github-client-secret"
+NODE_ENV="development"
+```
+
+**4. Запустите сервер:**
+
+```bash
+npm run dev
+```
+
+Должно вывести: `Server running on http://localhost:3000`
+
+---
+
+## 🗂️ Архитектура проекта
 
 ```
-quiz-backend/ (из LR8)
+quiz-backend/
 ├── src/
-│   ├── services/                ← НОВОЕ: Бизнес-логика
-│   │   ├── scoringService.ts    # Функции для подсчёта баллов
-│   │   └── sessionService.ts    # Управление жизненным циклом сессии
-│   ├── utils/
-│   │   └── validation.ts        ← НОВОЕ: Zod schemas
-│   ├── middleware/
-│   │   └── admin.ts             ← НОВОЕ: проверка admin роли
+│   ├── index.ts              # Точка входа (Hono app)
 │   ├── routes/
-│   │   ├── sessions.ts          ← ИЗМЕНИТЬ: добавить логику
-│   │   ├── answers.ts           ← НОВОЕ: endpoints для ответов
-│   │   └── admin.ts             ← НОВОЕ: admin endpoints
-│   └── index.ts                 ← ИЗМЕНИТЬ: добавить новые routes
+│   │   └── auth.ts           # POST /api/auth/github/callback, GET /api/auth/me
+│   ├── middleware/
+│   │   └── auth.ts           # (опционально) JWT middleware для примера
+│   └── utils/
+│       └── validation.ts     # Zod schemas для валидации
 ├── prisma/
-│   └── schema.prisma            ← ИЗМЕНИТЬ: relationships, индексы
-└── ...
+│   ├── schema.prisma         # User модель
+│   └── migrations/           # История миграций БД
+├── .env                      # Переменные окружения
+├── package.json
+├── tsconfig.json
+└── README.md
 ```
 
 ---
 
-## 📋 Checkpoints (без микроменеджмента)
+## 📋 Последовательность действий (Checkpoints)
 
-Работайте независимо. Каждый checkpoint — это отдельная функциональность.
+Работайте независимо. Каждый checkpoint — это отдельный блок функциональности. Начните с простого, двигайтесь к сложному.
 
-### ✅ Checkpoint 0: Quiz Models (30 минут)
+### ✅ Checkpoint 1: Hello World
 
-**Цель:** Добавить модели Session, Answer, Question, Category в Prisma schema
-
-**Контекст из LR8:**
-В LR8 вы создали только User модель для аутентификации. Теперь добавляем модели для Quiz функциональности.
+**Цель:** Запустить Hono сервер, вернуть статус
 
 **Что делать:**
 
-1. Откройте `prisma/schema.prisma` и добавьте модели:
+1. Создайте файл `src/index.ts` с базовым Hono приложением
+2. Добавьте endpoint `GET /health` — должен вернуть `{"status":"ok"}`
+3. Запустите `npm run dev`
+4. Проверьте в браузере: `http://localhost:3000/health`
 
-```prisma
-model Category {
-  id        String     @id @default(cuid())
-  name      String
-  slug      String     @unique
-  questions Question[]
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-}
+**Подсказка:** Посмотрите на слайд 8 в slides-speech.md (там hello-world пример)
 
-model Question {
-  id             String   @id @default(cuid())
-  text           String
-  type           String   // "single-select", "multiple-select", "essay"
-  categoryId     String
-  category       Category @relation(fields: [categoryId], references: [id])
-  correctAnswer  Json?    // Правильные ответы для автопроверки
-  points         Int      @default(1)
-  answers        Answer[]
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-}
+**Проверка:** Браузер показывает JSON, сервер не падает
 
-model Session {
-  id          String    @id @default(cuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id])
-  status      String    @default("in_progress") // "in_progress", "completed", "expired"
-  score       Float?
-  startedAt   DateTime  @default(now())
-  expiresAt   DateTime
-  completedAt DateTime?
-  answers     Answer[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+---
 
-  @@index([userId])
-  @@index([status])
-  @@index([userId, status])
-}
+### ✅ Checkpoint 2: Prisma + User Model
 
-model Answer {
-  id         String   @id @default(cuid())
-  sessionId  String
-  session    Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  questionId String
-  question   Question @relation(fields: [questionId], references: [id])
-  userAnswer Json
-  score      Float?   // null если ещё не проверен (essay)
-  isCorrect  Boolean? // для автопроверки
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+**Цель:** Настроить БД, создать User модель
 
-  @@unique([sessionId, questionId]) // один ответ на вопрос в сессии
-  @@index([sessionId])
-  @@index([questionId])
-}
-```
+**Что делать:**
 
-2. **Обновите User модель** - добавьте role и relationship с Session:
-
-```prisma
-model User {
-  id        String    @id @default(cuid())
-  email     String    @unique
-  name      String?
-  githubId  String    @unique
-  role      String    @default("student") // "student" или "admin"
-  sessions  Session[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-}
-```
-
-3. Запустите миграцию:
-
-```bash
-npx prisma migrate dev --name add-quiz-models
-```
-
-4. Проверьте в Prisma Studio:
-
-```bash
-npx prisma studio
-```
+1. Отредактируйте `prisma/schema.prisma`
+2. Создайте User модель с полями: `id`, `email`, `name`, `githubId`
+3. Запустите миграцию: `npx prisma migrate dev --name init`
+4. Проверьте БД через Prisma Studio: `npx prisma studio`
 
 **Подсказка:**
 
-- `Json` тип для `correctAnswer` и `userAnswer` - гибкая структура данных
-- `onDelete: Cascade` - при удалении Session автоматически удаляются все Answer
-- Индексы на `userId`, `status` для быстрых queries по этим полям
-- `@@unique([sessionId, questionId])` - студент может ответить на вопрос только один раз в сессии
-- `role` поле в User - для admin функциональности в Checkpoint 5
+- `email` и `githubId` должны быть unique
+- `githubId` используется для GitHub OAuth
+- Используйте `@default(cuid())` для `id`
+
+**Проверка:** `npx prisma studio` открывается, User таблица пустая, но структура правильная
+
+---
+
+### ✅ Checkpoint 3: GitHub OAuth Callback
+
+**Цель:** Реализовать обработку GitHub OAuth callback
+
+**Что делать:**
+
+1. Создайте `src/utils/validation.ts` с Zod schema для валидации `code`
+2. Создайте `src/routes/auth.ts`
+3. Реализуйте endpoint:
+   - `POST /api/auth/github/callback` — обработка GitHub OAuth
+   - Параметры: `code` (GitHub authorization code)
+   - **Mock режим:** если `code` начинается с `test_` — использовать тестовые данные
+   - **Real режим:** обменяйте код на GitHub access token через GitHub API
+   - Получите данные пользователя из GitHub (id, email, name)
+   - Создайте или обновите User в БД (используйте `githubId` как уникальный ключ)
+   - Выдайте JWT токен с помощью `sign()` из `hono/jwt`
+   - Вернуть `{token: "...", user: {...}}`
+4. Подключите route в `src/index.ts`
+
+**Подсказка:**
+
+- Используйте `prisma.user.upsert()` для создания/обновления пользователя по `githubId`
+- JWT создаётся встроенной функцией `sign()` из `hono/jwt`
+- Для тестирования используйте код с префиксом `test_*` (например, `test_code`)
+
+**Проверка (тестирование с mock данными):**
+
+```bash
+curl -X POST http://localhost:3000/api/auth/github/callback \
+  -H "Content-Type: application/json" \
+  -d '{"code":"test_code"}'
+```
+
+---
+
+### ✅ Checkpoint 4: JWT Protection
+
+**Цель:** Защитить endpoints JWT токенами
+
+**Что делать:**
+
+1. В `src/routes/auth.ts` добавьте функцию для проверки JWT:
+   - Используйте `verify()` из `hono/jwt` с 3 аргументами: `verify(token, secret, 'HS256')`
+   - Проверяйте `Authorization: Bearer <token>` header
+   - Если токен валиден — извлеките `userId` из payload
+   - Если нет — вернуть 401 Unauthorized
+2. Можете опционально создать `src/middleware/auth.ts` для примера (не обязательно)
+
+**Подсказка:**
+
+- JWT_SECRET должен быть в .env
+- `verify()` требует 3 аргумента: `await verify(token, JWT_SECRET, 'HS256')`
+- Payload содержит `userId` и `email`
+- Функция `sign()` из Checkpoint 3 создаёт токен с этими полями
+
+**Проверка (после добавления токена из Checkpoint 3):**
+
+```bash
+TOKEN="your-jwt-token-from-checkpoint-3"
+curl http://localhost:3000/api/auth/me \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+---
+
+### ✅ Checkpoint 5: GET /api/auth/me
+
+**Цель:** Реализовать получение текущего пользователя
+
+**Что делать:**
+
+1. В `src/routes/auth.ts` добавьте endpoint:
+   - `GET /api/auth/me` — получить данные текущего пользователя
+   - Проверьте JWT токен из `Authorization` header (из Checkpoint 4)
+   - Извлеките `userId` из payload
+   - Найдите пользователя в БД через `prisma.user.findUnique()`
+   - Вернуть `{user: {id, email, name, githubId, createdAt}}`
+2. Обработайте ошибки:
+   - Нет токена → 401 Unauthorized
+   - Невалидный токен → 401 Invalid token
+   - Юзер не найден → 404 User not found
+
+**Подсказка:** Используйте проверку JWT из Checkpoint 4 в начале handler'а
 
 **Проверка:**
 
-- Prisma Studio показывает все 5 таблиц: User, Category, Question, Session, Answer
-- Relationships видны в Studio (можно переходить по связям между таблицами)
-- Миграция применена без ошибок
-
----
-
-### ✅ Checkpoint 1: Scoring Service (30 минут)
-
-**Цель:** Создать сервис для подсчёта баллов
-
-**Что делать:**
-
-1. Создайте файл `src/services/scoringService.ts` (это **бизнес-логика**, а не утилита!)
-2. Создайте class `ScoringService` с методами:
-   - `scoreMultipleSelect(correctAnswers, studentAnswers): number`
-     - Правила: +1 за правильный, -0.5 за неправильный, min 0
-   - `scoreEssay(grades, rubric): number`
-     - Параметры: массив оценок, рубрика с максимальными баллами
-3. Экспортируйте singleton: `export const scoringService = new ScoringService()`
-4. Напишите тесты (минимум 5 тестов для каждого метода)
-
-**Подсказка:**
-
-- Используйте примеры из slides-speech.md (слайд 9-10)
-- Services слой — это место для сложной бизнес-логики
-- Routes будут вызывать `scoringService.scoreMultipleSelect(...)` в лучше этого Checkpoint'е
-
-**Проверка:** Тесты проходят, методы возвращают правильные значения
-
----
-
-### ✅ Checkpoint 2: Prisma Schema Updates (20 минут)
-
-**Цель:** Обновить schema с relationships и оптимизацией
-
-**Что делать:**
-
-1. Обновите `prisma/schema.prisma`
-   - Добавьте одиночные индексы на часто используемые поля (userId, status)
-   - Добавьте комбинированный индекс на [userId, status]
-   - Убедитесь что relationships правильные
-2. Создайте миграцию: `npx prisma migrate dev --name add-indexes`
-3. Проверьте в Prisma Studio что всё работает
-
-**Подсказка:** Смотрите CHEATSHEET.md — раздел "Database Indexes"
-
-**Проверка:** Миграция применена, индексы видны в БД
-
----
-
-### ✅ Checkpoint 3: Session & Answer Endpoints (60 минут)
-
-**Цель:** Добавить бизнес-логику в endpoints (использовать services)
-
-**Что делать:**
-
-1. **Создайте файл `src/services/sessionService.ts`**
-   - Класс с методом `submitAnswer(sessionId, questionId, userAnswer)`
-   - Класс с методом `submitSession(sessionId)`
-   - Используйте `scoringService` для вычисления баллов
-   - Используйте `prisma.$transaction()` для безопасности
-
-2. **Обновите POST /api/sessions** (route)
-   - Получить количество вопросов для квиза
-   - Создать Session с expiresAt (1 час)
-   - Вернуть session с информацией
-
-3. **Создайте POST /api/sessions/:id/answers** (route)
-   - Вызвать `sessionService.submitAnswer(...)`
-   - Вернуть answer с score (если есть)
-   - Обработать ошибки
-
-4. **Обновите GET /api/sessions/:id** (route)
-   - Загружать session со всеми answers
-   - Загружать вопросы для каждого ответа
-   - Проверять авторизацию (только свои сессии)
-
-5. **Создайте POST /api/sessions/:id/submit** (route)
-   - Вызвать `sessionService.submitSession(...)`
-   - Вернуть completed session
-
-**Подсказка:**
-
-- Логика остаётся в **services**, routes — только HTTP
-- SessionService использует ScoringService
-- Transactions защищают критичные операции
-
-**Проверка:** Можно создать сессию, добавить ответы через service, завершить её
-
----
-
-### ✅ Checkpoint 4: Validation with Zod (20 минут)
-
-**Цель:** Добавить валидацию для всех inputs
-
-**Что делать:**
-
-1. Создайте или обновите `src/utils/validation.ts`
-   - AnswerSchema (questionId, userAnswer, sessionId)
-   - GradeSchema (для оценивания essay)
-   - QuestionSchema (для создания вопроса)
-2. Добавьте валидацию в endpoints:
-   - POST /api/sessions/:id/answers
-   - POST /api/sessions/:id/submit
-   - POST /api/admin/answers/:id/grade
-   - POST /api/admin/questions
-3. Возвращайте 400 с детальной ошибкой если валидация не прошла
-
-**Подсказка:** Смотрите CHEATSHEET.md — раздел "Validation with Zod"
-
-**Проверка:** Invalid requests возвращают 400 с ошибкой
-
----
-
-### ✅ Checkpoint 5: Admin Endpoints (40 минут)
-
-**Цель:** Реализовать admin функциональность
-
-**Что делать:**
-
-1. **Создайте или обновите `src/middleware/admin.ts`**
-   - Middleware для проверки что пользователь — admin
-
-2. **Обновите User model** (если нужно)
-   - Добавьте поле role ("student", "admin")
-
-3. **Создайте admin endpoints:**
-
-   **GET /api/admin/questions**
-   - Получить все вопросы с информацией
-   - Включить count ответов для каждого вопроса
-
-   **POST /api/admin/questions**
-   - Создать новый вопрос
-   - Валидировать данные
-
-   **PUT /api/admin/questions/:id**
-   - Обновить вопрос
-
-   **GET /api/admin/answers/pending**
-   - Получить essay ответы которые не проверены (score = null)
-   - Включить информацию о student и session
-
-   **POST /api/admin/answers/:id/grade**
-   - Выставить оценку за essay
-   - Использовать transaction
-   - Если все ответы в сессии проверены → обновить Session score
-
-   **GET /api/admin/students/:userId/stats**
-   - Получить статистику студента
-   - Среднее значение score, количество сессий
-
-**Подсказка:** Используйте примеры из slides-speech.md (слайд 13-15)
-
-**Проверка:** Admin endpoints работают, возвращают правильные данные
-
----
-
-### ✅ Checkpoint 6: Optimization (30 минут)
-
-**Цель:** Оптимизировать queries для performance
-
-**Что делать:**
-
-1. Используйте `select` вместо `include` где возможно
-   - Не загружайте unnecessary поля
-   - Пример: для списка сессий не нужны все answers
-
-2. Добавьте pagination в endpoints которые возвращают много записей
-   - GET /api/admin/answers/pending
-   - GET /api/admin/students - если будет
-
-3. Используйте batch operations где нужно
-   - Если создаёте много вопросов — используйте createMany
-
-4. Проверьте что индексы используются
-   - Логируйте slow queries через Prisma
-   - Убедитесь что есть индексы на часто используемые WHERE условия
-
-**Подсказка:** CHEATSHEET.md — разделы "Performance" и "Batch Operations"
-
-**Проверка:** Queries быстрые, используют индексы
-
----
-
-## 🏗️ Архитектурные улучшения в LR9
-
-### Разделение ответственности (Separation of Concerns)
-
-В LR8 вся логика была в `routes/` — это нормально для учебного проекта. Вы учились создавать REST API.
-
-В LR9 мы добавляем **services/** слой для бизнес-логики — это учит правильной архитектуре.
-
-**Слои backend'а:**
-
-| Слой            | Ответственность                    | Пример                           |
-| --------------- | ---------------------------------- | -------------------------------- |
-| **routes/**     | HTTP (req/res, валидация, статусы) | `POST /api/sessions/:id/submit`  |
-| **services/**   | Бизнес-логика (scoring, lifecycle) | `sessionService.submitSession()` |
-| **middleware/** | Аутентификация, авторизация        | `authMiddleware`, `requireAdmin` |
-| **utils/**      | Вспомогательные функции, валидация | `validation.ts`, `jwt.ts`        |
-| **prisma/**     | Работа с БД                        | Queries, migrations              |
-
-**Почему так лучше:**
-
-✅ **Тестируемость** — services не зависят от HTTP, легко писать юнит-тесты
-✅ **Переиспользование** — один service можно вызвать из разных routes
-✅ **Читаемость** — каждый слой делает одно, проще понять код
-✅ **Масштабируемость** — когда логика растёт, она остаётся организованной
-
-**Пример: без services (плохо)**
-
-```typescript
-// ❌ Вся логика в route handler
-app.post("/api/sessions/:id/submit", async (c) => {
-  const { id } = c.req.param();
-
-  const session = await prisma.session.findUnique({
-    where: { id },
-    include: { answers: true },
-  });
-
-  if (!session) return c.json({ error: "Not found" }, 404);
-  if (session.expiresAt < new Date()) return c.json({ error: "Expired" }, 400);
-
-  const score = session.answers
-    .filter((a) => a.score !== null)
-    .reduce((sum, a) => sum + (a.score || 0), 0);
-
-  const updated = await prisma.session.update({
-    where: { id },
-    data: { status: "completed", score },
-  });
-
-  return c.json({ session: updated });
-});
-```
-
-**Пример: с services (хорошо)**
-
-```typescript
-// ✅ Бизнес-логика в service
-class SessionService {
-  async submitSession(sessionId: string) {
-    return await prisma.$transaction(async (tx) => {
-      const session = await tx.session.findUnique({
-        where: { id: sessionId },
-        include: { answers: true },
-      });
-
-      if (!session) throw new Error("Not found");
-      if (session.expiresAt < new Date()) throw new Error("Expired");
-
-      const score = this.calculateScore(session.answers);
-
-      return await tx.session.update({
-        where: { id: sessionId },
-        data: { status: "completed", score },
-      });
-    });
-  }
-
-  private calculateScore(answers: Answer[]): number {
-    return answers
-      .filter((a) => a.score !== null)
-      .reduce((sum, a) => sum + (a.score || 0), 0);
-  }
-}
-
-// ✅ Route только HTTP
-app.post("/api/sessions/:id/submit", async (c) => {
-  const { id } = c.req.param();
-
-  try {
-    const session = await sessionService.submitSession(id);
-    return c.json({ session });
-  } catch (error) {
-    return c.json({ error: error.message }, 400);
-  }
-});
-```
-
-**Когда использовать services:**
-
-| Должно быть в services | Должно быть в routes  |
-| ---------------------- | --------------------- |
-| Scoring algorithm      | HTTP валидация (Zod)  |
-| Session lifecycle      | Парсинг req.body      |
-| Database transactions  | Возврат статус кодов  |
-| Бизнес-правила         | Обработка HTTP ошибок |
-| Вычисления             | Middleware            |
-
-**Для простых CRUD операций — services не нужны:**
-
-```typescript
-// ✅ Простой CRUD - можно прямо в route
-app.get("/api/categories", async (c) => {
-  const categories = await prisma.category.findMany();
-  return c.json({ categories });
-});
-
-// ❌ Не нужен CategoryService для этого
-```
-
-Services нужны когда есть:
-
-- Сложная бизнес-логика (scoring, validation rules)
-- Несколько шагов операции (transactions)
-- Переиспользование логики в разных routes
-- Вычисления и трансформации данных
-
----
-
-## ⚡ Быстрый старт
-
-Если вы помните как запускалась работа из LR8:
-
 ```bash
-# Обновить dependencies (если нужны новые)
-npm install
-
-# Обновить Prisma schema
-npx prisma migrate dev --name add-scoring-logic
-
-# Запустить сервер
-npm run dev
-
-# Открыть Prisma Studio для просмотра данных
-npx prisma studio
+TOKEN="your-jwt-token-from-checkpoint-3"
+curl http://localhost:3000/api/auth/me \
+  -H "Authorization: Bearer $TOKEN"
+# Должен вернуть: {"user": {"id": "...", "email": "...", "name": "...", "githubId": "...", "createdAt": "..."}}
 ```
 
 ---
 
 ## 📚 Справочные материалы
 
-Для каждого checkpoint используйте эти материалы:
-
-- **GUIDE.md** — подробное объяснение концепций
-- **CHEATSHEET.md** — готовые примеры кода
-- **interactive.html** — интерактивные примеры с поиском
-- **slides-speech.md** — полный текст лекции с деталями
+- **Теория лекции:** [GUIDE.md](docs/GUIDE.md) — объяснение концепций
+- **Примеры кода:** [CHEATSHEET.md](docs/CHEATSHEET.md) — синтаксис и примеры
+- **Интерактивные примеры:** [interactive.html](docs/interactive.html) — код с подсветкой
+- **OpenAPI схема:** `../lr5/quiz-api-schema.yaml` — контракт API
 
 ---
 
-## 🔍 Типичные проблемы
+## 🔧 Полезные команды
 
-| Проблема                          | Решение                                                          |
-| --------------------------------- | ---------------------------------------------------------------- |
-| `Relation not found`              | Убедитесь что в schema добавлены @relation annotations           |
-| `Unique constraint failed`        | Используйте уникальные значения или skipDuplicates в createMany  |
-| `Transaction failed`              | Убедитесь что логика внутри transaction не откатывает исключения |
-| `N+1 problem (медленные queries)` | Используйте include вместо цикла с отдельными queries            |
-| `Prisma cache issue`              | Запустите `npx prisma generate`                                  |
+```bash
+# Запуск в режиме разработки
+npm run dev
+
+# Prisma — просмотр БД в веб-интерфейсе
+npx prisma studio
+
+# Prisma — создание миграции после изменения schema
+npx prisma migrate dev --name <name>
+
+# Prisma — сброс БД (удаляет все данные!)
+npx prisma migrate reset
+
+# TypeScript — проверка типов
+npx tsc --noEmit
+
+# Тестирование API
+curl -X GET http://localhost:3000/health
+curl -X POST http://localhost:3000/api/auth/github/callback \
+  -H "Content-Type: application/json" \
+  -d '{"code":"test"}'
+```
+
+---
+
+## ⚠️ Типичные проблемы и решения
+
+| Проблема                                         | Причина                        | Решение                                          |
+| ------------------------------------------------ | ------------------------------ | ------------------------------------------------ |
+| `cannot find module 'hono'`                      | Зависимости не установлены     | `npm install`                                    |
+| `ENOENT: no such file or directory, open '.env'` | Не создан .env файл            | Создайте `.env` с нужными переменными            |
+| `Connection refused on 5432`                     | Нет БД                         | Используйте SQLite (файловая БД)                 |
+| `401 Unauthorized`                               | Токен неверный или отсутствует | Проверьте header `Authorization: Bearer <token>` |
+| `Column does not exist`                          | Миграция не применена          | Запустите `npx prisma migrate dev`               |
 
 ---
 
@@ -547,34 +298,48 @@ npx prisma studio
 
 Для получения хороших оценок:
 
-- ✅ Все 6 checkpoints реализованы
-- ✅ Scoring functions работают правильно (с тестами)
-- ✅ Endpoints валидируют входные данные
-- ✅ Admin endpoints требуют авторизацию
-- ✅ Используются transactions для критичных операций
-- ✅ Queries оптимизированы (select, include, pagination, индексы)
-- ✅ Нет ошибок в логах, валидация работает
-- ✅ Код читаем, использованы TypeScript типы
+- ✅ Все 5 checkpoints реализованы
+- ✅ Endpoints возвращают данные согласно формату (JSON с token/user)
+- ✅ Защищённые endpoints требуют JWT токен
+- ✅ Нет ошибок в консоли при запуске
+- ✅ Можно протестировать через curl/Postman
+- ✅ Mock режим работает (code с префиксом `test_*`)
+- ✅ Код читаем, с правильной типизацией TypeScript
+- ✅ Зависимости установлены и явно перечислены в package.json
 
 ---
 
-## 📝 Дополнительная информация
+## 📝 Для студентов, проходивших LR5-6
 
-### Для тех кто хочет больше:
+Если вы делали LR5-6, вы уже знакомы с:
 
-- Добавьте Leaderboard endpoint (топ 10 студентов)
-- Добавьте экспорт результатов в JSON
-- Добавьте email уведомления после submission
-- Добавьте логирование всех действий в отдельную таблицу
-- Добавьте Rate Limiting на endpoints
+- OpenAPI схемой (`quiz-api-schema.yaml`)
+- Endpoints для Quiz приложения
+- Работой с API через React Query и Orval
 
-### Для тех кто хочет понять deeper:
+**Что изменится:**
 
-- Прочитайте про Prisma Aggregation (groupBy, \_count)
-- Прочитайте про RAW SQL queries в Prisma
-- Изучите различные Caching strategies
-- Прочитайте про Database Connection Pooling
+| LR5-6 (использование API)            | LR8 (создание API)                                   |
+| ------------------------------------ | ---------------------------------------------------- |
+| GET запрос к `/api/categories`       | **Вы реализуете** этот endpoint                      |
+| Mock-server или внешний API          | **Ваш Hono backend** на localhost:3000               |
+| `VITE_API_URL=http://dancv.ddns.net` | `VITE_API_URL=http://localhost:3000`                 |
+| Orval генерирует React Query hooks   | Backend реализует endpoints, на которые идут запросы |
+
+**Результат:** Ваше React приложение из LR5 сможет работать с вашим backend!
+
+Если вы не делали LR5-6 — не переживайте! Вам не нужны знания из LR5-6 для прохождения LR8. Начните с нуля, следуя checkpoints.
 
 ---
 
-**Удачи! Вы делаете свой backend production-ready! 🚀**
+## 🎓 Дополнительные ресурсы
+
+- [Hono Documentation](https://hono.dev)
+- [Prisma Documentation](https://www.prisma.io/docs)
+- [TypeScript Handbook](https://www.typescriptlang.org/docs)
+- [JWT Introduction](https://jwt.io/introduction)
+- [REST API Best Practices](https://restfulapi.net)
+
+---
+
+**Удачи! Вы создаёте свой первый backend! 🚀**
