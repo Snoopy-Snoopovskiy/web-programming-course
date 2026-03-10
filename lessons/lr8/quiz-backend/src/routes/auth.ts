@@ -17,20 +17,6 @@ interface GitHubUser {
   email: string | null
 }
 
-<<<<<<< HEAD
-function getMockGitHubUser(code: string): GitHubUser {
-  const suffix = code.replace(/^test_/, '') || 'user'
-  const githubId =
-    Array.from(suffix).reduce(
-      (acc, ch) => (acc * 31 + ch.charCodeAt(0)) & 0x7fffffff,
-      0,
-    ) || 1
-  return {
-    id: githubId,
-    login: `mock_${suffix}`,
-    name: `Mock User (${suffix})`,
-    email: `mock_${suffix}@example.com`,
-=======
     const result = githubCodeSchema.safeParse(body)
     if (!result.success) {
       return c.json({ error: "Invalid code" }, 400)
@@ -68,7 +54,6 @@ function getMockGitHubUser(code: string): GitHubUser {
 
   } catch (error) {
     return c.json({ error: "Server error" }, 500)
->>>>>>> labWork8
   }
 }
 
@@ -254,5 +239,3 @@ auth.get('/me', async c => {
 
   return c.json({ user })
 })
-
-export default auth
