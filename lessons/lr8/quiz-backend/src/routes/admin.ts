@@ -1,7 +1,6 @@
 import { Hono } from 'hono'
 import { adminMiddleware } from '../middleware/admin.js'
 import { prisma } from '../lib/prisma.js'
-import { Prisma } from '../generated/prisma/client.js'
 import {
   questionSchema,
   updateQuestionSchema,
@@ -110,8 +109,8 @@ admin.post('/questions', async c => {
       type,
       categoryId,
       correctAnswer: correctAnswer
-        ? (correctAnswer as unknown as Prisma.InputJsonValue)
-        : Prisma.JsonNull,
+        ? JSON.stringify(correctAnswer)
+        : null,
       points,
     },
     select: {
@@ -183,9 +182,8 @@ admin.put('/questions/:id', async c => {
         ? {
             correctAnswer:
               parsed.data.correctAnswer != null
-                ? (parsed.data
-                    .correctAnswer as unknown as Prisma.InputJsonValue)
-                : Prisma.JsonNull,
+                ? JSON.stringify(parsed.data.correctAnswer)
+                : null,
           }
         : {}),
       ...(parsed.data.points !== undefined

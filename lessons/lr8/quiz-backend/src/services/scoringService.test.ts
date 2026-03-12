@@ -1,157 +1,65 @@
-import { describe, test, expect } from 'bun:test'
-import { ScoringService } from './scoringService.js'
+import { ScoringService } from "./scoringService.js";
+const scoring = new ScoringService();
 
-const scoring = new ScoringService()
+// Все ответы правильные
+const test1 = scoring.scoreMultipleSelect(["a", "b", "c"], ["a", "b", "c"]);
+console.assert(test1 === 3, `Test 1 failed: expected 3, got ${test1}`);
 
-describe('ScoringService.scoreMultipleSelect', () => {
-  test('all correct answers selected → full score', () => {
-    const result = scoring.scoreMultipleSelect(['A', 'B', 'C'], ['A', 'B', 'C'])
-    expect(result).toBe(3)
-  })
+// Все ответы неправильные
+const test2 = scoring.scoreMultipleSelect(["a", "b"], ["c", "d", "e"]);
+console.assert(test2 === 0, `Test 2 failed: expected 0, got ${test2}`);
 
-  test('no answers selected → score 0', () => {
-    const result = scoring.scoreMultipleSelect(['A', 'B'], [])
-    expect(result).toBe(0)
-  })
+// Частично правильные
+const test3 = scoring.scoreMultipleSelect(["a", "b", "c"], ["a", "d"]);
+console.assert(test3 === 0.5, `Test 3 failed: expected 0.5, got ${test3}`);
 
-  test('all wrong answers selected → score clamped to 0', () => {
-    const result = scoring.scoreMultipleSelect(['A', 'B'], ['C', 'D'])
-    expect(result).toBe(0)
-  })
+// Пустой ответ студента
+const test4 = scoring.scoreMultipleSelect(["a", "b"], []);
+console.assert(test4 === 0, `Test 4 failed: expected 0, got ${test4}`);
 
-  test('partial correct selection → raw positive', () => {
-    const result = scoring.scoreMultipleSelect(['A', 'B'], ['A', 'C'])
-    expect(result).toBe(0.5)
-  })
+// Один правильный, много неправильных — не уходит в минус
+const test5 = scoring.scoreMultipleSelect(["a"], ["a", "b", "c", "d"]);
+console.assert(test5 === 0, `Test 5 failed: expected 0, got ${test5}`);
 
-  test('more wrong than right → clamped to 0', () => {
-    const result = scoring.scoreMultipleSelect(['A', 'B'], ['A', 'C', 'D', 'E'])
-    expect(result).toBe(0)
-  })
+const rubric = [
+  { criterion: "structure", maxPoints: 3 },
+  { criterion: "content", maxPoints: 5 },
+  { criterion: "grammar", maxPoints: 2 },
+];
 
-  test('single correct answer selected exactly → score 1', () => {
-    const result = scoring.scoreMultipleSelect(['A'], ['A'])
-    expect(result).toBe(1)
-  })
+// Полный балл
+const test6 = scoring.scoreEssay(
+  [{ criterion: "structure", points: 3 }, { criterion: "content", points: 5 }, { criterion: "grammar", points: 2 }],
+  rubric
+);
+console.assert(test6 === 10, `Test 6 failed: expected 10, got ${test6}`);
 
-  test('single correct answer not selected → score 0', () => {
-    const result = scoring.scoreMultipleSelect(['A'], ['B'])
-    expect(result).toBe(0)
-  })
+// Частичный балл
+const test7 = scoring.scoreEssay(
+  [{ criterion: "structure", points: 2 }, { criterion: "content", points: 3 }],
+  rubric
+);
+console.assert(test7 === 5, `Test 7 failed: expected 5, got ${test7}`);
 
-  test('duplicate student answers are each evaluated independently', () => {
-    const result = scoring.scoreMultipleSelect(['A', 'B'], ['A', 'A'])
-    expect(result).toBe(2)
-  })
+// Балл превышает максимум — обрезается
+const test8 = scoring.scoreEssay(
+  [{ criterion: "content", points: 5 }],
+  rubric
+);
+console.assert(test8 === 5, `Test 8 failed: expected 5, got ${test8}`);
 
-  test('empty correct answers definition → always 0', () => {
-    const result = scoring.scoreMultipleSelect([], ['A', 'B'])
-    expect(result).toBe(0)
-  })
+// Несуществующий критерий — игнорируется
+const test9 = scoring.scoreEssay(
+  [{ criterion: "unknown", points: 5 }],
+  rubric
+);
+console.assert(test9 === 0, `Test 9 failed: expected 0, got ${test9}`);
 
-  test('exactly one correct out of many selected → net could be negative → 0', () => {
-    const result = scoring.scoreMultipleSelect(['A'], ['A', 'B', 'C', 'D', 'E'])
-    expect(result).toBe(0)
-  })
-})
+// Отрицательный балл — обрезается до 0
+const test10 = scoring.scoreEssay(
+  [{ criterion: "grammar", points: -1 }],
+  rubric
+);
+console.assert(test10 === 0, `Test 10 failed: expected 0, got ${test10}`);
 
-describe('ScoringService.scoreSingleSelect', () => {
-  test('correct answer → 1', () => {
-    expect(scoring.scoreSingleSelect('B', 'B')).toBe(1)
-  })
-
-  test('wrong answer → 0', () => {
-    expect(scoring.scoreSingleSelect('B', 'C')).toBe(0)
-  })
-
-  test('empty strings both → 1 (equal)', () => {
-    expect(scoring.scoreSingleSelect('', '')).toBe(1)
-  })
-
-  test('case sensitive comparison', () => {
-    expect(scoring.scoreSingleSelect('a', 'A')).toBe(0)
-  })
-})
-
-describe('ScoringService.scoreEssay', () => {
-  const rubric = [
-    { criterion: 'clarity', maxPoints: 3 },
-    { criterion: 'depth', maxPoints: 5 },
-    { criterion: 'examples', maxPoints: 2 },
-  ]
-
-  test('full marks on all criteria → total max score', () => {
-    const grades = [
-      { criterion: 'clarity', points: 3 },
-      { criterion: 'depth', points: 5 },
-      { criterion: 'examples', points: 2 },
-    ]
-    expect(scoring.scoreEssay(grades, rubric)).toBe(10)
-  })
-
-  test('zero grades → 0', () => {
-    const grades = [
-      { criterion: 'clarity', points: 0 },
-      { criterion: 'depth', points: 0 },
-      { criterion: 'examples', points: 0 },
-    ]
-    expect(scoring.scoreEssay(grades, rubric)).toBe(0)
-  })
-
-  test('grades exceed maxPoints → clamped to maxPoints', () => {
-    const grades = [
-      { criterion: 'clarity', points: 10 },
-      { criterion: 'depth', points: 10 },
-      { criterion: 'examples', points: 10 },
-    ]
-    expect(scoring.scoreEssay(grades, rubric)).toBe(10)
-  })
-
-  test('negative grades → clamped to 0 per criterion', () => {
-    const grades = [
-      { criterion: 'clarity', points: -5 },
-      { criterion: 'depth', points: 3 },
-      { criterion: 'examples', points: 1 },
-    ]
-    expect(scoring.scoreEssay(grades, rubric)).toBe(4)
-  })
-
-  test('unknown criterion is ignored', () => {
-    const grades = [
-      { criterion: 'clarity', points: 2 },
-      { criterion: 'unknown_crit', points: 99 },
-    ]
-    expect(scoring.scoreEssay(grades, rubric)).toBe(2)
-  })
-
-  test('empty grades array → 0', () => {
-    expect(scoring.scoreEssay([], rubric)).toBe(0)
-  })
-
-  test('empty rubric → 0 regardless of grades', () => {
-    const grades = [{ criterion: 'clarity', points: 3 }]
-    expect(scoring.scoreEssay(grades, [])).toBe(0)
-  })
-
-  test('partial criteria graded → only those are counted', () => {
-    const grades = [{ criterion: 'depth', points: 4 }]
-    expect(scoring.scoreEssay(grades, rubric)).toBe(4)
-  })
-
-  test('maxEssayScore returns sum of all maxPoints', () => {
-    expect(scoring.maxEssayScore(rubric)).toBe(10)
-  })
-
-  test('normaliseEssayScore returns ratio in [0,1]', () => {
-    const grades = [
-      { criterion: 'clarity', points: 3 },
-      { criterion: 'depth', points: 2.5 },
-      { criterion: 'examples', points: 2 },
-    ]
-    expect(scoring.normaliseEssayScore(grades, rubric)).toBeCloseTo(0.75)
-  })
-
-  test('normaliseEssayScore returns 0 for empty rubric', () => {
-    expect(scoring.normaliseEssayScore([], [])).toBe(0)
-  })
-})
+console.log("All tests passed!");

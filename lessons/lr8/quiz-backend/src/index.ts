@@ -1,19 +1,23 @@
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import auth from "./routes/auth.js"
+import sessions from "./routes/sessions.js"
+import admin from "./routes/admin.js"
 import "dotenv/config"
 
-// Создаем серверное приложение
 const app = new Hono()
 
 app.get('/', (c) => {
   return c.text('Hello Hono!')
 })
 
-// Простой endpoint
 app.get('/health', (c) => {
-  return c.json({"status":"ok"});
+  return c.json({ status: "ok" });
 });
+
+app.route("/api/auth", auth)
+app.route("/api/sessions", sessions)
+app.route("/api/admin", admin)
 
 serve({
   fetch: app.fetch,
@@ -21,9 +25,5 @@ serve({
 }, (info) => {
   console.log(`Server is running on http://localhost:${info.port}`)
 })
-
-app.route("/api/auth", auth)
-
-// app.get("/health", (c) => c.json({ status: "ok" }))
 
 export default app

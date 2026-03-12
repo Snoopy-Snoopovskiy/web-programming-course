@@ -1,328 +1,103 @@
-import { prisma } from '../lib/prisma.js'
-import { scoringService } from './scoringService.js'
-
+import { scoringService } from "./scoringService.js";
+import { prisma } from "../lib/prisma.js";
+import type { Prisma } from "../generated/prisma/index.js";
+// Кастомные ошибки
 export class SessionNotFoundError extends Error {
-  constructor(id: string) {
-    super(`Session "${id}" not found`)
-    this.name = 'SessionNotFoundError'
-  }
+  constructor() { super("Session not found"); }
 }
-
 export class SessionExpiredError extends Error {
-  constructor() {
-    super('Session has expired')
-    this.name = 'SessionExpiredError'
-  }
+  constructor() { super("Session has expired"); }
 }
-
 export class SessionAlreadyCompletedError extends Error {
-  constructor() {
-    super('Session is already completed')
-    this.name = 'SessionAlreadyCompletedError'
-  }
+  constructor() { super("Session already completed"); }
 }
-
 export class QuestionNotFoundError extends Error {
-  constructor(id: string) {
-    super(`Question "${id}" not found`)
-    this.name = 'QuestionNotFoundError'
-  }
+  constructor() { super("Question not found"); }
 }
-
 export class DuplicateAnswerError extends Error {
-  constructor(questionId: string) {
-    super(`Question "${questionId}" has already been answered in this session`)
-    this.name = 'DuplicateAnswerError'
-  }
-}
-
-interface QuestionRow {
-  id: string
-  type: string
-  points: number
-  correctAnswer: unknown
-}
-
-function autoScore(
-  question: QuestionRow,
-  userAnswer: unknown,
-): { score: number | null; isCorrect: boolean | null } {
-  const type = question.type
-
-  if (type === 'essay') {
-    return { score: null, isCorrect: null }
-  }
-
-  const correct = question.correctAnswer
-
-  if (!correct || !Array.isArray(correct)) {
-    return { score: null, isCorrect: null }
-  }
-
-  const correctStrings: string[] = correct.map(String)
-  const studentStrings: string[] = Array.isArray(userAnswer)
-    ? userAnswer.map(String)
-    : [String(userAnswer)]
-
-  if (type === 'single-select') {
-    const studentAnswer = studentStrings[0] ?? ''
-    const isCorrect =
-      scoringService.scoreSingleSelect(
-        correctStrings[0] ?? '',
-        studentAnswer,
-      ) === 1
-    return {
-      score: isCorrect ? question.points : 0,
-      isCorrect,
-    }
-  }
-
-  if (type === 'multiple-select') {
-    const raw = scoringService.scoreMultipleSelect(
-      correctStrings,
-      studentStrings,
-    )
-    const maxRaw = correctStrings.length
-    const scaled = maxRaw > 0 ? (raw / maxRaw) * question.points : 0
-    const rounded = Math.round(scaled * 100) / 100
-    return {
-      score: rounded,
-      isCorrect: rounded >= question.points,
-    }
-  }
-
-  return { score: null, isCorrect: null }
+  constructor() { super("Answer already submitted for this question"); }
 }
 
 export class SessionService {
   async createSession(userId: string) {
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000)
-
-    const session = await prisma.session.create({
-      data: {
-        userId,
-        status: 'in_progress',
-        expiresAt,
-      },
-      select: {
-        id: true,
-        userId: true,
-        status: true,
-        score: true,
-        startedAt: true,
-        expiresAt: true,
-        completedAt: true,
-        createdAt: true,
-      },
-    })
-
-    return session
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // +1 час
+    return await prisma.session.create({
+      data: { userId, expiresAt },
+    });
   }
 
-  async submitAnswer(
-    sessionId: string,
-    questionId: string,
-    userAnswer: unknown,
-  ) {
-    return prisma.$transaction(async tx => {
-      const session = await tx.session.findUnique({
-        where: { id: sessionId },
-        select: { id: true, status: true, expiresAt: true },
-      })
-
-      if (!session) throw new SessionNotFoundError(sessionId)
-      if (session.status === 'completed')
-        throw new SessionAlreadyCompletedError()
-      if (session.status === 'expired' || session.expiresAt < new Date()) {
-        await tx.session.update({
-          where: { id: sessionId },
-          data: { status: 'expired' },
-        })
-        throw new SessionExpiredError()
-      }
-
-      const question = await tx.question.findUnique({
-        where: { id: questionId },
-        select: {
-          id: true,
-          type: true,
-          points: true,
-          correctAnswer: true,
-        },
-      })
-
-      if (!question) throw new QuestionNotFoundError(questionId)
-
-      const existing = await tx.answer.findUnique({
-        where: { sessionId_questionId: { sessionId, questionId } },
-        select: { id: true },
-      })
-
-      if (existing) throw new DuplicateAnswerError(questionId)
-
-      const { score, isCorrect } = autoScore(question, userAnswer)
-
-      const answer = await tx.answer.create({
-        data: {
-          sessionId,
-          questionId,
-          userAnswer: userAnswer as never,
-          score,
-          isCorrect,
-        },
-        select: {
-          id: true,
-          sessionId: true,
-          questionId: true,
-          userAnswer: true,
-          score: true,
-          isCorrect: true,
-          createdAt: true,
-          question: {
-            select: {
-              id: true,
-              text: true,
-              type: true,
-              points: true,
-            },
-          },
-        },
-      })
-
-      return answer
-    })
-  }
-
-  async submitSession(sessionId: string) {
-    return prisma.$transaction(async tx => {
-      const session = await tx.session.findUnique({
-        where: { id: sessionId },
-        include: {
-          answers: {
-            select: {
-              id: true,
-              score: true,
-              isCorrect: true,
-              question: {
-                select: { type: true, points: true },
-              },
-            },
-          },
-        },
-      })
-
-      if (!session) throw new SessionNotFoundError(sessionId)
-      if (session.status === 'completed')
-        throw new SessionAlreadyCompletedError()
-      if (session.status === 'expired' || session.expiresAt < new Date()) {
-        await tx.session.update({
-          where: { id: sessionId },
-          data: { status: 'expired' },
-        })
-        throw new SessionExpiredError()
-      }
-
-      const totalScore = this.calculateScore(session.answers)
-
-      const updated = await tx.session.update({
-        where: { id: sessionId },
-        data: {
-          status: 'completed',
-          score: totalScore,
-          completedAt: new Date(),
-        },
-        select: {
-          id: true,
-          userId: true,
-          status: true,
-          score: true,
-          startedAt: true,
-          expiresAt: true,
-          completedAt: true,
-          createdAt: true,
-          answers: {
-            select: {
-              id: true,
-              questionId: true,
-              userAnswer: true,
-              score: true,
-              isCorrect: true,
-            },
-          },
-        },
-      })
-
-      return updated
-    })
-  }
-
-  /**
-   * Get a session with all answers and their questions.
-   * Verifies the session belongs to the given userId.
-   */
   async getSession(sessionId: string, userId: string) {
     const session = await prisma.session.findUnique({
       where: { id: sessionId },
-      select: {
-        id: true,
-        userId: true,
-        status: true,
-        score: true,
-        startedAt: true,
-        expiresAt: true,
-        completedAt: true,
-        createdAt: true,
-        updatedAt: true,
+      include: {
         answers: {
-          select: {
-            id: true,
-            questionId: true,
-            userAnswer: true,
-            score: true,
-            isCorrect: true,
-            createdAt: true,
+          include: {
             question: {
-              select: {
-                id: true,
-                text: true,
-                type: true,
-                points: true,
-                category: {
-                  select: { id: true, name: true, slug: true },
-                },
-              },
+              select: { id: true, text: true, type: true, points: true },
             },
           },
-          orderBy: { createdAt: 'asc' },
         },
       },
-    })
+    });
 
-    if (!session) throw new SessionNotFoundError(sessionId)
-
-    if (session.userId !== userId) {
-      throw new SessionNotFoundError(sessionId)
-    }
-
-    return session
+    if (!session || session.userId !== userId) throw new SessionNotFoundError();
+    return session;
   }
 
-  private calculateScore(
-    answers: Array<{
-      score: number | null
-      question: { type: string; points: number }
-    }>,
-  ): number {
-    let total = 0
+  async submitAnswer(sessionId: string, questionId: string, userAnswer: string[]) {
+return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const session = await tx.session.findUnique({ where: { id: sessionId } });
+      if (!session) throw new SessionNotFoundError();
+      if (session.status !== "in_progress") throw new SessionAlreadyCompletedError();
+      if (session.expiresAt < new Date()) throw new SessionExpiredError();
 
-    for (const answer of answers) {
-      if (answer.score !== null) {
-        total += answer.score
+      const question = await tx.question.findUnique({ where: { id: questionId } });
+      if (!question) throw new QuestionNotFoundError();
+
+      let score: number | null = null;
+      let isCorrect: boolean | null = null;
+
+      if (question.type === "single-select" && question.correctAnswer) {
+        const correct = JSON.parse(question.correctAnswer) as string[];
+        isCorrect = correct[0] === userAnswer[0];
+        score = isCorrect ? question.points : 0;
+      } else if (question.type === "multiple-select" && question.correctAnswer) {
+        const correct = JSON.parse(question.correctAnswer) as string[];
+        score = scoringService.scoreMultipleSelect(correct, userAnswer);
+        isCorrect = score === question.points;
       }
-    }
 
-    return Math.round(total * 100) / 100
+      const answer = await tx.answer.upsert({
+        where: { sessionId_questionId: { sessionId, questionId } },
+        create: { sessionId, questionId, userAnswer: JSON.stringify(userAnswer), score, isCorrect },
+        update: { userAnswer: JSON.stringify(userAnswer), score, isCorrect },
+      });
+
+      return answer;
+    });
+  }
+
+  async submitSession(sessionId: string) {
+return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        const session = await tx.session.findUnique({
+        where: { id: sessionId },
+        include: { answers: true },
+      });
+
+      if (!session) throw new SessionNotFoundError();
+      if (session.status !== "in_progress") throw new SessionAlreadyCompletedError();
+      if (session.expiresAt < new Date()) throw new SessionExpiredError();
+
+      const score = session.answers
+        .filter((a: { score: number | null }) => a.score !== null)
+        .reduce((sum: number, a: { score: number | null }) => sum + (a.score ?? 0), 0);
+
+      return await tx.session.update({
+        where: { id: sessionId },
+        data: { status: "completed", score, completedAt: new Date() },
+      });
+    });
   }
 }
 
-export const sessionService = new SessionService()
+export const sessionService = new SessionService();

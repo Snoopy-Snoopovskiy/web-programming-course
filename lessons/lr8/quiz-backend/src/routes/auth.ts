@@ -1,13 +1,11 @@
 import { Hono } from "hono"
 import { sign } from "hono/jwt"
 import { githubCodeSchema } from "../utils/validation.js"
-import { PrismaClient } from "../generated/prisma/index.js"
+import { prisma } from "../lib/prisma.js"
 import { verify } from "hono/jwt"
 import { getGitHubUserByCode } from "../services/github.js"
 
 const auth = new Hono()
-const prisma = new PrismaClient()
-
 const JWT_SECRET = process.env.JWT_SECRET!
 
 auth.post("/github/callback", async (c) => {
@@ -23,13 +21,13 @@ auth.post("/github/callback", async (c) => {
     const githubUser = await getGitHubUserByCode(code)
 
     const user = await prisma.user.upsert({
-      where: { githubId: githubUser.id.toString() },
+      where: {githubId: githubUser.id,},
       update: {
         email: githubUser.email ?? "no-email@github.com",
         name: githubUser.name
       },
       create: {
-        githubId: githubUser.id.toString() ,
+        githubId: githubUser.id,
         email: githubUser.email  ?? "no-email@github.com",
         name: githubUser.name
       }
