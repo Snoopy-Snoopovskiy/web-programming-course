@@ -59,18 +59,36 @@ sessions.post('/', async c => {
       : undefined,
   )
 
-  const session = await sessionService.createSession(userId)
+const session = await sessionService.createSession(userId)
 
-  return c.json(
-    {
-      session,
-      meta: {
-        availableQuestions: questionCount,
-        expiresIn: '1 hour',
-      },
+// Загружаем пользователя и вопросы для ответа
+const [user2, questions] = await Promise.all([
+  prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, email: true, role: true },
+  }),
+  prisma.question.findMany(
+    parsed.data.categoryId
+      ? { where: { categoryId: parsed.data.categoryId } }
+      : undefined,
+    ),
+])
+
+return c.json(
+  {
+    session: {
+      ...session,
+      user: user2,
+      answers: [],
     },
-    201,
-  )
+    questions,
+    meta: {
+      availableQuestions: questionCount,
+      expiresIn: '1 hour',
+    },
+  },
+  201,
+)
 })
 
 sessions.get('/', async c => {
