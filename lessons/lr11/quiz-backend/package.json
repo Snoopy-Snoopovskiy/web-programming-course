@@ -11,7 +11,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "ci:local:win": "powershell -ExecutionPolicy Bypass -File .\\scripts\\local-release.ps1"
+    "ci:local:win": "powershell -ExecutionPolicy Bypass -File .\\scripts\\local-release.ps1",
+    "docker:build": "docker build -t quiz-backend:local .",
+    "docker:run": "docker run --rm -p 3000:3000 --env-file .env quiz-backend:local",
+    "compose:up": "docker compose up --build -d",
+    "compose:down": "docker compose down -v",
+    "compose:logs": "docker compose logs -f backend"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.9",
