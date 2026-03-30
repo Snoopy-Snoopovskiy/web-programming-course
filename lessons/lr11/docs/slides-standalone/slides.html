@@ -1,0 +1,302 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LR11: DevOps - Docker & CI/CD (Local-first)</title>
+    <link rel="stylesheet" href="reset.css" />
+    <link rel="stylesheet" href="reveal.css" />
+    <link rel="stylesheet" href="black.css" />
+    <link rel="stylesheet" href="monokai.css" />
+    <style>
+      .reveal h1,
+      .reveal h2,
+      .reveal h3 {
+        text-transform: none;
+      }
+      .reveal ul,
+      .reveal ol,
+      .reveal p {
+        text-align: left;
+      }
+      .reveal pre {
+        width: 100%;
+        font-size: 0.56em;
+      }
+      .highlight-box {
+        background: rgba(100, 200, 255, 0.2);
+        padding: 14px;
+        border-radius: 8px;
+        border-left: 4px solid #64c8ff;
+        margin: 14px 0;
+      }
+      .danger-box {
+        background: rgba(255, 100, 100, 0.2);
+        padding: 14px;
+        border-radius: 8px;
+        border-left: 4px solid #ff6464;
+        margin: 14px 0;
+      }
+      .success-box {
+        background: rgba(100, 255, 100, 0.2);
+        padding: 14px;
+        border-radius: 8px;
+        border-left: 4px solid #64ff64;
+        margin: 14px 0;
+      }
+      .small {
+        font-size: 0.82em;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="reveal">
+      <div class="slides">
+        <section>
+          <h1>LR11: DevOps - Docker & CI/CD</h1>
+          <h3>Титульный</h3>
+          <div class="highlight-box small">
+            Цель: воспроизводимый локальный цикл build, run, test и release для backend.
+          </div>
+          <p class="small">Формат LR11: local-first, без удаленного деплоя.</p>
+        </section>
+
+        <section>
+          <h2>План лекции</h2>
+          <ol>
+            <li>Docker основы</li>
+            <li>Dockerfile для Node.js backend</li>
+            <li>Docker Compose для backend + database</li>
+            <li>CI pipeline в GitHub Actions</li>
+            <li>Local CD-like сценарий и rollback</li>
+            <li>Практические checkpoints</li>
+          </ol>
+          <p class="small">Формат команд: <strong>ЛИНУКС (эталон)</strong> + <strong>WINDOWS (PowerShell)</strong>.</p>
+        </section>
+
+        <section>
+          <h2>Почему DevOps нужен уже сейчас</h2>
+          <div class="danger-box">
+            Без стандартизированного окружения качество кода сложно подтверждать командно.
+          </div>
+          <ul>
+            <li>Окружения отличаются</li>
+            <li>"У меня работает" не масштабируется</li>
+            <li>Проверки качества не автоматизированы</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Docker в одной схеме</h2>
+          <ul>
+            <li><strong>Dockerfile</strong>: рецепт сборки</li>
+            <li><strong>Image</strong>: versioned immutable артефакт</li>
+            <li><strong>Container</strong>: runtime-процесс</li>
+          </ul>
+          <p class="small">Один image должен одинаково запускаться у всех участников команды.</p>
+        </section>
+
+        <section>
+          <h2>Image vs Container</h2>
+          <ul>
+            <li>Image: шаблон, версия, артефакт</li>
+            <li>Container: запущенный процесс с состоянием</li>
+          </ul>
+          <div class="success-box small">Собираем image один раз, запускаем контейнеры многократно.</div>
+        </section>
+
+        <section>
+          <h2>Dockerfile поток</h2>
+          <ol>
+            <li>Выбрать базовый образ</li>
+            <li>Установить зависимости</li>
+            <li>Скопировать код</li>
+            <li>Собрать TypeScript</li>
+            <li>Запустить runtime</li>
+          </ol>
+          <p class="small">Порядок шагов влияет на кеш и скорость сборки.</p>
+        </section>
+
+        <section>
+          <h2>Multi-stage build</h2>
+          <ul>
+            <li><strong>builder</strong> stage: install + build</li>
+            <li><strong>runner</strong> stage: только runtime</li>
+          </ul>
+          <ul class="small">
+            <li>Меньше размер image</li>
+            <li>Меньше лишних зависимостей</li>
+            <li>Быстрее pull и запуск</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>`.dockerignore`</h2>
+          <pre><code class="language-text">node_modules
+.git
+coverage
+dist
+.env</code></pre>
+          <p class="small">Сокращает build context, ускоряет сборку и снижает риск утечек.</p>
+        </section>
+
+        <section>
+          <h2>Docker Compose роль</h2>
+          <ul>
+            <li>Поднимает backend + db одной командой</li>
+            <li>Создает общую сеть сервисов</li>
+            <li>Управляет lifecycle окружения</li>
+          </ul>
+          <pre><code class="language-bash">docker compose up --build -d
+docker compose ps</code></pre>
+        </section>
+
+        <section>
+          <h2>Healthcheck и старт зависимостей</h2>
+          <p class="small">Проблема: backend стартует до готовности БД.</p>
+          <ul>
+            <li>Добавляем healthcheck для db</li>
+            <li>Используем <code>depends_on.condition: service_healthy</code></li>
+          </ul>
+          <div class="success-box small">Меньше случайных падений при старте стека.</div>
+        </section>
+
+        <section>
+          <h2>Environment variables</h2>
+          <ul>
+            <li><code>DATABASE_URL</code></li>
+            <li><code>JWT_SECRET</code></li>
+            <li><code>NODE_ENV</code></li>
+            <li><code>PORT</code></li>
+          </ul>
+          <p class="small">`.env` не коммитим, `.env.example` коммитим.</p>
+        </section>
+
+        <section>
+          <h2>CI/CD в LR11</h2>
+          <ul>
+            <li><strong>CI:</strong> lint, test, build, docker build</li>
+            <li><strong>CD:</strong> локальная симуляция release + rollback</li>
+          </ul>
+          <div class="danger-box small">Удаленный деплой в этой лабораторной не выполняется.</div>
+        </section>
+
+        <section>
+          <h2>GitHub Actions структура</h2>
+          <ul>
+            <li><code>on</code>: triggers</li>
+            <li><code>jobs</code>: задачи</li>
+            <li><code>steps</code>: последовательность команд</li>
+          </ul>
+          <p class="small">Шаги располагаем от быстрых проверок к более тяжелым.</p>
+        </section>
+
+        <section>
+          <h2>Пример CI workflow</h2>
+          <pre><code class="language-yaml">name: CI
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test
+      - run: npm run build
+      - run: docker build -t quiz-backend:ci .</code></pre>
+        </section>
+
+        <section>
+          <h2>Локальный запуск CI</h2>
+          <ul>
+            <li><code>act -W .github/workflows/ci.yml</code> (опционально)</li>
+            <li>или локальный fallback-скрипт с тем же порядком шагов</li>
+          </ul>
+          <p class="small">Linux команды показываем как эталон, PowerShell как эквивалент для студентов на Windows.</p>
+          <pre><code class="language-bash">npm ci
+npm run lint
+npm run test
+npm run build
+docker build -t quiz-backend:ci .</code></pre>
+        </section>
+
+        <section>
+          <h2>Local release сценарий</h2>
+          <ol>
+            <li>Собрать image с новым tag</li>
+            <li>Поднять compose</li>
+            <li>Выполнить healthcheck</li>
+            <li>Проверить 1-2 критичных endpoint</li>
+          </ol>
+          <ul class="small">
+            <li><strong>ЛИНУКС (эталон):</strong> <code>export TAG=$(date +%Y%m%d-%H%M%S)</code></li>
+            <li><strong>WINDOWS (PowerShell):</strong> <code>$TAG = Get-Date -Format "yyyyMMdd-HHmmss"</code></li>
+          </ul>
+          <p class="small">Это минимальный CD-like процесс для локальной среды.</p>
+        </section>
+
+        <section>
+          <h2>Rollback локально</h2>
+          <ol>
+            <li>Остановить текущий стек</li>
+            <li>Вернуть предыдущий image tag</li>
+            <li>Запустить снова</li>
+            <li>Повторить smoke-check</li>
+          </ol>
+          <div class="highlight-box small">Rollback должен быть быстрым и воспроизводимым.</div>
+        </section>
+
+        <section>
+          <h2>Что сдаем</h2>
+          <ol>
+            <li>Dockerfile multi-stage</li>
+            <li>docker-compose (backend + db)</li>
+            <li>CI workflow</li>
+            <li>Smoke-check подтверждение</li>
+            <li>Локальный release/rollback сценарий</li>
+          </ol>
+        </section>
+
+        <section>
+          <h2>Частые ошибки</h2>
+          <ul>
+            <li><code>localhost</code> вместо <code>db</code> в compose сети</li>
+            <li>Нет healthcheck</li>
+            <li>Секреты зашиты в Dockerfile</li>
+            <li>Нет tag-стратегии для rollback</li>
+            <li>CI шаги не совпадают с локальными</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>Финальные правила</h2>
+          <ol>
+            <li>Окружение должно запускаться одной командой</li>
+            <li>CI должен останавливать плохие изменения</li>
+            <li>Release должен проверяться smoke-тестами</li>
+            <li>Rollback должен быть готов заранее</li>
+            <li>LR11 остается local-first без remote deploy</li>
+          </ol>
+        </section>
+      </div>
+    </div>
+
+    <script src="reveal.js"></script>
+    <script src="highlight.js"></script>
+    <script src="markdown.js"></script>
+    <script src="notes.js"></script>
+    <script>
+      Reveal.initialize({
+        hash: true,
+        slideNumber: "c",
+        showSlideNumber: "all",
+        plugins: [RevealHighlight, RevealMarkdown, RevealNotes]
+      });
+    </script>
+  </body>
+</html>
