@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import auth from "./routes/auth.js"
 import sessions from "./routes/sessions.js"
 import admin from "./routes/admin.js"
-import "dotenv/config"
+
 
 const app = new Hono()
 
