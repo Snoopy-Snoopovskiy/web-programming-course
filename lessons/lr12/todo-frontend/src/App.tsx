@@ -8,29 +8,35 @@ type ServerTodo = {
   updatedAt: string;
 };
 
-// TODO(PWA): расширьте типы под офлайн-очередь операций.
-type QueueAction = {
-  id: string;
-  type: 'create' | 'toggle' | 'delete';
-  ts: number;
-};
+type QueueAction =
+  | { id: string; type: 'create'; ts: number; title: string }
+  | { id: string; type: 'toggle'; ts: number; todoId: number; done: boolean }
+  | { id: string; type: 'delete'; ts: number; todoId: number };
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
+const QUEUE_KEY = 'todo-offline-queue';
+
+function loadQueue(): QueueAction[] {
+  try {
+    return JSON.parse(localStorage.getItem(QUEUE_KEY) ?? '[]') as QueueAction[];
+  } catch {
+    return [];
+  }
+}
+
+function saveQueue(queue: QueueAction[]): void {
+  localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+}
 
 function toLocalText(value: string) {
   const normalized = value.includes(' ') ? value.replace(' ', 'T') : value;
   const date = new Date(normalized);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
+  if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString('ru-RU');
 }
 
 async function parseJson<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return response.json() as Promise<T>;
 }
 
@@ -46,7 +52,6 @@ async function apiCreate(title: string): Promise<ServerTodo> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title }),
   });
-
   return parseJson<ServerTodo>(response);
 }
 
@@ -56,7 +61,6 @@ async function apiToggle(todoId: number, done: boolean): Promise<ServerTodo> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ done }),
   });
-
   return parseJson<ServerTodo>(response);
 }
 
@@ -64,14 +68,16 @@ async function apiDelete(todoId: number): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/todos/${todoId}`, {
     method: 'DELETE',
   });
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
 }
 
 function registerServiceWorkerStarter() {
-  // TODO(PWA-1): зарегистрируйте Service Worker.
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then(() => console.log('SW зарегистрирован'))
+      .catch(err => console.error('SW ошибка:', err));
+  }
 }
 
 export default function App() {
@@ -80,11 +86,57 @@ export default function App() {
   const [message, setMessage] = useState<string>('');
   const [inputValue, setInputValue] = useState<string>('');
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
-  const [queueActions] = useState<QueueAction[]>([]);
+  const [queueActions, setQueueActions] = useState<QueueAction[]>(loadQueue());
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   const refreshFromServer = useCallback(async () => {
     const serverTodos = await apiFetchTodos();
     setTodos(serverTodos);
+  }, []);
+
+  // Синхронизация очереди
+  const syncQueue = useCallback(async () => {
+    const queue = loadQueue();
+    if (queue.length === 0) return;
+
+    setIsSyncing(true);
+    setMessage('Синхронизация...');
+
+    const remaining: QueueAction[] = [];
+
+    for (const action of queue) {
+      try {
+        if (action.type === 'create') {
+          await apiCreate(action.title);
+        } else if (action.type === 'toggle') {
+          await apiToggle(action.todoId, action.done);
+        } else if (action.type === 'delete') {
+          await apiDelete(action.todoId);
+        }
+        // Успешно — не добавляем в remaining
+      } catch {
+        // Ошибка — оставляем в очереди
+        remaining.push(action);
+      }
+    }
+
+    saveQueue(remaining);
+    setQueueActions(remaining);
+    setIsSyncing(false);
+
+    if (remaining.length === 0) {
+      setMessage('Синхронизация завершена!');
+      await refreshFromServer();
+    } else {
+      setMessage(`Не удалось синхронизировать ${remaining.length} действий.`);
+    }
+  }, [refreshFromServer]);
+
+  const addToQueue = useCallback((action: QueueAction) => {
+    const queue = loadQueue();
+    queue.push(action);
+    saveQueue(queue);
+    setQueueActions([...queue]);
   }, []);
 
   const onCreate = useCallback(
@@ -97,11 +149,16 @@ export default function App() {
         await refreshFromServer();
         setMessage('Задача добавлена.');
       } catch {
-        // TODO(PWA-3): если сеть недоступна, положить create-действие в офлайн-очередь.
-        setMessage('Не удалось добавить задачу. Реализуйте офлайн-очередь для этого сценария.');
+        addToQueue({
+          id: crypto.randomUUID(),
+          type: 'create',
+          ts: Date.now(),
+          title: trimmed,
+        });
+        setMessage('Офлайн: задача добавлена в очередь.');
       }
     },
-    [refreshFromServer]
+    [refreshFromServer, addToQueue]
   );
 
   const onToggle = useCallback(
@@ -111,11 +168,17 @@ export default function App() {
         await refreshFromServer();
         setMessage('Статус обновлен.');
       } catch {
-        // TODO(PWA-3): при ошибке сети не терять toggle-действие, а складывать в очередь.
-        setMessage('Не удалось обновить статус. Добавьте fallback в офлайн-очередь.');
+        addToQueue({
+          id: crypto.randomUUID(),
+          type: 'toggle',
+          ts: Date.now(),
+          todoId: todo.id,
+          done: !todo.done,
+        });
+        setMessage('Офлайн: действие добавлено в очередь.');
       }
     },
-    [refreshFromServer]
+    [refreshFromServer, addToQueue]
   );
 
   const onDelete = useCallback(
@@ -125,11 +188,16 @@ export default function App() {
         await refreshFromServer();
         setMessage('Задача удалена.');
       } catch {
-        // TODO(PWA-3): при ошибке сети не терять delete-действие, а складывать в очередь.
-        setMessage('Не удалось удалить задачу. Добавьте fallback в офлайн-очередь.');
+        addToQueue({
+          id: crypto.randomUUID(),
+          type: 'delete',
+          ts: Date.now(),
+          todoId: todo.id,
+        });
+        setMessage('Офлайн: удаление добавлено в очередь.');
       }
     },
-    [refreshFromServer]
+    [refreshFromServer, addToQueue]
   );
 
   const onSubmit = useCallback(
@@ -169,23 +237,39 @@ export default function App() {
   }, [refreshFromServer]);
 
   useEffect(() => {
-    // TODO(PWA-2): добавьте обработчики online/offline.
-    // window.addEventListener('online', ...)
-    // window.addEventListener('offline', ...)
-    // и обновляйте isOnline + message.
+    const handleOnline = () => {
+      setIsOnline(true);
+      setMessage('Соединение восстановлено!');
+      void syncQueue();
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      setMessage('Нет соединения. Работаем офлайн.');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
 
     setIsOnline(navigator.onLine);
-  }, []);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [syncQueue]);
 
   return (
     <main className="app">
       <header className="header">
         <h1>Todo-сы</h1>
-        <span className={`badge ${isOnline ? 'online' : 'offline'}`}>{isOnline ? 'online' : 'offline'}</span>
+        <span className={`badge ${isOnline ? 'online' : 'offline'}`}>
+          {isOnline ? 'online' : 'offline'}
+        </span>
       </header>
 
       <p className="muted">
-        Есть: online CRUD. Реализовать: PWA, offline-очередь и синхронизацию после reconnect.
+        PWA Todo — офлайн-очередь и синхронизация реализованы.
       </p>
 
       <form className="toolbar" onSubmit={onSubmit}>
@@ -198,20 +282,18 @@ export default function App() {
           onChange={(event) => setInputValue(event.target.value)}
         />
         <button type="submit">Добавить</button>
-        <button type="button" disabled>
-          Синхронизация (TODO)
+        <button
+          type="button"
+          disabled={isSyncing || queueActions.length === 0}
+          onClick={() => void syncQueue()}
+        >
+          {isSyncing ? 'Синхронизация...' : `Синхронизировать (${queueActions.length})`}
         </button>
       </form>
 
       <section className="meta">
         <span className="badge">Офлайн-очередь: {queueActions.length}</span>
-        <span className="badge">sync: TODO</span>
-      </section>
-
-      <section className="todo-note">
-        <p>
-          TODO(PWA-4): реализуйте очередь операций и автоматическую отправку после события <code>online</code>.
-        </p>
+        <span className="badge">{isSyncing ? 'sync: идёт...' : 'sync: готов'}</span>
       </section>
 
       {message ? <div className="message">{message}</div> : null}
