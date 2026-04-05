@@ -5,14 +5,12 @@ import { sign } from "hono/jwt";
 
 const JWT_SECRET = process.env.JWT_SECRET ?? "your-secret-key-change-in-production";
 
-async function getOrCreateTestUser() {
-  const user = await prisma.user.findFirst({
-    where: { externalToken: { not: null } },
-  });
+async function getTestUser() {
+  const user = await prisma.user.findFirst();
 
   if (!user) {
     throw new Error(
-      "Нет пользователя с externalToken. Сначала залогиньтесь через:\n" +
+      "Нет пользователей в БД. Сначала залогинься через:\n" +
       "POST /api/auth/github/callback с реальным GitHub code"
     );
   }
@@ -28,10 +26,8 @@ async function getOrCreateTestUser() {
 
 describe("Sessions — создание сессии", () => {
 
-  it("POST /api/sessions — создаёт сессию и загружает вопросы", async () => {
-    const { token } = await getOrCreateTestUser();
-
-    const questionsBefore = await prisma.question.count();
+  it("POST /api/sessions — создаёт сессию с вопросами из локальной БД", async () => {
+    const { token } = await getTestUser();
 
     const res = await app.request("/api/sessions", {
       method: "POST",
@@ -46,16 +42,19 @@ describe("Sessions — создание сессии", () => {
 
     const body = await res.json() as {
       sessionId: string;
-      externalSessionId: string | null;
+      userId: string;
+      status: string;
       mode: string;
       totalQuestions: number;
       maxScore: number;
+      answeredCount: number;
+      currentScore: number;
+      createdAt: string;
       expiresAt: string;
       questions: {
         id: string;
         type: string;
         question: string;
-        difficulty: string;
         categoryId: string;
         maxPoints: number;
         options?: string[];
@@ -63,41 +62,13 @@ describe("Sessions — создание сессии", () => {
       }[];
     };
 
-    const questionsAfter = await prisma.question.count();
-
     // Проверяем что сессия создана
     expect(body.sessionId).toBeDefined();
+    expect(body.status).toBe("active");
+    expect(body.mode).toBe("practice");
     expect(body.questions).toBeDefined();
     expect(body.questions.length).toBeGreaterThan(0);
 
-    // Проверяем что вопросы сохранились в БД
-    expect(questionsAfter).toBeGreaterThanOrEqual(questionsBefore);
-
-    // Выводим результаты
-    console.log("СЕССИЯ СОЗДАНА");
-    console.log(`  Session ID:          ${body.sessionId}`);
-    console.log(`  External Session:    ${body.externalSessionId}`);
-    console.log(`  Режим:               ${body.mode}`);
-    console.log(`  Всего вопросов:      ${body.totalQuestions}`);
-    console.log(`  Макс. баллов:        ${body.maxScore}`);
-    console.log(`  Истекает:            ${body.expiresAt}`);
-    console.log(`  Вопросов в БД до:    ${questionsBefore}`);
-    console.log(`  Вопросов в БД после: ${questionsAfter}`);
-
-    console.log("ВОПРОСЫ:");
-    body.questions.forEach((q, i) => {
-      console.log(`\n${i + 1}. [${q.type}] ${q.question}`);
-      console.log(`   ID:         ${q.id}`);
-      console.log(`   Категория:  ${q.categoryId}`);
-      console.log(`   Сложность:  ${q.difficulty}`);
-      console.log(`   Баллы:      ${q.maxPoints}`);
-      if (q.options) {
-        console.log(`   Варианты:   ${q.options.join(" | ")}`);
-      }
-      if (q.minLength) {
-        console.log(`   Мин. длина: ${q.minLength} символов`);
-      }
-    });
   });
 
 });
